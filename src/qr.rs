@@ -206,23 +206,33 @@ pub fn encode(text: &str) -> Result<Vec<Vec<bool>>, String> {
     m[size - 8][8] = true; // dark module, never part of format data
     Ok(m)
 }
-pub fn svg(text: &str) -> Result<String, String> {
-    let m = encode(text)?;
-    let n = m.len();
-    let mut s = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {} {}\" shape-rendering=\"crispEdges\"><rect width=\"100%\" height=\"100%\" fill=\"white\"/><path fill=\"black\" d=\"",
-        n + 8,
-        n + 8
-    );
-    for y in 0..n {
-        for x in 0..n {
-            if m[y][x] {
-                s.push_str(&format!("M{} {}h1v1H{}z", x + 4, y + 4, x + 4));
-            }
+/// Render a module matrix to a terminal using half-block characters. Two
+/// vertical modules are packed per character cell; ANSI colors (black on
+/// white) give a deterministic polarity on light and dark themes alike.
+/// A 4-module quiet zone frames the matrix. Nothing touches the filesystem.
+pub fn terminal(m: &[Vec<bool>]) -> String {
+    let n = m.len() as isize;
+    let border = 4isize;
+    let cell = |y: isize, x: isize| {
+        y >= 0 && y < n && x >= 0 && x < n && m[y as usize][x as usize]
+    };
+    let mut s = String::new();
+    let mut y = -border;
+    while y < n + border {
+        s.push_str("\x1b[30;47m");
+        for x in -border..n + border {
+            let (top, bot) = (cell(y, x), cell(y + 1, x));
+            s.push(match (top, bot) {
+                (true, true) => '█',
+                (false, false) => ' ',
+                (true, false) => '▀',
+                (false, true) => '▄',
+            });
         }
+        s.push_str("\x1b[0m\n");
+        y += 2;
     }
-    s.push_str("\"/></svg>");
-    Ok(s)
+    s
 }
 
 #[cfg(test)]
@@ -232,10 +242,20 @@ mod tests {
     fn totp_uri_fits() {
         let m = encode("otpauth://totp/sudo2fa?secret=JBSWY3DPEHPK3PXP&issuer=sudo2fa").unwrap();
         assert_eq!(m.len(), 37);
-        assert!(
-            svg("otpauth://totp/sudo2fa?secret=JBSWY3DPEHPK3PXP&issuer=sudo2fa")
-                .unwrap()
-                .starts_with("<svg")
-        );
+    }
+    #[test]
+    fn terminal_half_blocks() {
+        // 2x2 matrix: top dark, bottom light  -> '▀' (and vice versa).
+        let m = vec![vec![true, false], vec![false, true]];
+        let out = terminal(&m);
+        for line in out.lines() {
+            let stripped = line
+                .replace("\x1b[30;47m", "")
+                .replace("\x1b[0m", "");
+            assert_eq!(stripped.chars().count(), 2 + 8); // 4-module borders
+            assert!(stripped.chars().all(|c| matches!(c, '█' | ' ' | '▀' | '▄')));
+        }
+        // Rows: (37 cols? no, 2 cols + 8 border), vertical pairs => (2+8)/2=5 lines.
+        assert_eq!(out.lines().count(), 5);
     }
 }

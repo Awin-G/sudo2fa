@@ -24,7 +24,7 @@ expect_ok() {
     if out=$("$@" 2>&1); then ok "$desc (-> $out)"; else no "$desc ($out)"; fi
 }
 
-cleanup() { docker rm -f "$CT" >/dev/null 2>&1; rm -f .s2fa_root_secret .s2fa_nobody_secret; }
+cleanup() { docker rm -f "$CT" >/dev/null 2>&1; rm -f .s2fa_qr_terminal; }
 trap cleanup EXIT
 cleanup
 
@@ -38,7 +38,8 @@ run install -m 4755 /work/target/release/sudo2fa "$BIN" || exit 1
 out=$(run "$BIN" setup --qrcode) || { no "setup"; exit 1; }
 SECRET=$(printf '%s\n' "$out" | sed -n 's/^TOTP secret: //p')
 [ -n "$SECRET" ] || { no "setup printed no secret"; exit 1; }
-ok "setup generated secret (SVG: $(printf '%s' "$out" | sed -n 's/QR code written to //p'))"
+ok "setup generated secret (QR rendered in terminal, no file stored)"
+printf '%s\n' "$out" > .s2fa_qr_terminal
 
 mode_owner=$(run stat -c '%a %u' /etc/shadow2fa)
 [ "$mode_owner" = "600 0" ] && ok "key file is 0600 root-owned" || no "key file perms: $mode_owner"
@@ -50,7 +51,7 @@ run chmod 600 /etc/shadow2fa
 
 CODE=$("$PY" scripts/verify_qr.py --totp "$SECRET") || exit 1
 echo "-- host python: TOTP code $CODE (pyotp)"
-"$PY" scripts/verify_qr.py sudo2fa-qrcode.svg "$SECRET" && ok "QR decodes to otpauth URI" || no "QR verification"
+"$PY" scripts/verify_qr.py .s2fa_qr_terminal "$SECRET" && ok "QR decodes to otpauth URI" || no "QR verification"
 
 echo "== stage 2: token lifecycle (single shell session) =="
 if docker exec -i -e CODE="$CODE" "$CT" bash -s <<'EOF'

@@ -1,3 +1,2 @@
 /target/
-sudo2fa-qrcode.svg
-.s2fa_*_secret
+.s2fa_qr_terminal

@@ -88,9 +88,8 @@ fn setup() -> Result<(), String> {
     println!("TOTP secret: {}", base32::encode(&secret));
     println!("Add this URI to your authenticator: {}", uri);
     if q {
-        let svg = qr::svg(&uri)?;
-        fs::write("sudo2fa-qrcode.svg", svg).map_err(|e| e.to_string())?;
-        println!("QR code written to sudo2fa-qrcode.svg");
+        // Half-block terminal rendering; no secret-bearing file is stored.
+        println!("{}", qr::terminal(&qr::encode(&uri)?));
     }
     Ok(())
 }

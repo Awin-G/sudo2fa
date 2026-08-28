@@ -21,7 +21,7 @@ src/
   crypto.rs   SHA-1 与 HMAC-SHA1（纯手写实现）
   totp.rs     RFC 6238 TOTP：6 位十进制、30s 步长
   token.rs    HMAC token 签发/校验
-  qr.rs       内置 QR Code 编码器（Version 5-L，37x37）→ SVG
+  qr.rs       内置 QR Code 编码器（Version 5-L，37x37）→ 终端半块渲染
   main.rs     CLI、密钥文件管理、权限检查、命令执行
 scripts/
   verify_qr.py      Python 辅助验证：cv2 解码 SVG 二维码 + pyotp 生成 TOTP
@@ -71,7 +71,8 @@ scripts/
   两份副本按 ISO 位置放置（第一副本 bits0-5 沿第 8 列向下、
   bits9-14 沿第 8 行向左）
 - 掩码：固定 mask 0（(row+col)%2==0 取反），与格式信息一致
-- 输出：SVG（每个暗模块一个 `M x y h1v1H x z`，4 模块留白边）
+- 输出：终端半块字符渲染（两模块/字符，ANSI 黑 fg 白 bg 固定极性，
+  4 模块留白边；磁盘不写入任何含密钥文件）
 
 ## 6. 权限模型
 
@@ -102,7 +103,8 @@ sudo2fa setup [-q|--qrcode]
 ## 8. 验证策略（不得点阵断言）
 
 二维码正确性必须通过**真实解码器**验证：`scripts/verify_qr.py` 将
-SVG 重渲染为位图（多尺度 6–20 px/模块 × 高斯模糊 0/3/5 模拟镜头），
+二进制 stderr/stdout 中的半块字符 QR（ANSI 转义先剥离）还原为模块矩阵，
+重渲染为位图（多尺度 6–20 px/模块 × 高斯模糊 0/3/5 模拟镜头），
 用 OpenCV QRCodeDetector 解码，要求解码结果 == 预期 otpauth URI。
 TOTP 用 pyotp 独立生成，与二进制交叉验证。
 
@@ -111,4 +113,4 @@ TOTP 用 pyotp 独立生成，与二进制交叉验证。
 - SHA-1 仅用于 TOTP 兼容（RFC 6238 要求），不作通用哈希
 - token 为 URL 安全 hex，但泄露即等于验证码（限时长内）
 - `-u` 依赖 `su`，PAM 配置异常的容器中行为可能不同
-- QR 仅支持 Version 5-L，URI 超 106 字节会拒绝
+- QR 仅支持 Version 5-L，URI 超 106 字节会拒绝；输出只到终端，不落盘

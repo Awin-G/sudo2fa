@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 """QR/TOTP verification helper for sudo2fa.
 
-The QR code SVG is parsed, rendered to an image and decoded with a real
-QR decoder (OpenCV) across several module scales and mild lens blur, the
-way a phone camera would sample it. The decoded payload must match the
-expected otpauth URI. TOTP codes are generated independently with pyotp.
-Nothing here inspects module patterns as text.
+The terminal-rendered QR half/full block output is parsed back into a
+module matrix, rendered to an image and decoded with a real QR decoder
+(OpenCV) across several module scales and mild lens blur, the way a phone
+camera would sample it. The decoded payload must match the expected
+otpauth URI. TOTP codes are generated independently with pyotp. Nothing
+here inspects module patterns as text.
 
 Usage:
     verify_qr.py --totp SECRET            print a pyotp TOTP code
-    verify_qr.py SVGFILE SECRET           decode SVG and assert URI
+    verify_qr.py TERMINAL_FILE SECRET     decode terminal QR and assert URI
 """
 import re
 import sys
@@ -24,25 +25,32 @@ except Exception:
 import cv2
 import pyotp
 
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+# fg=black / bg=white scheme: which halves are dark modules
+CHARS = {"█": (1, 1), " ": (0, 0), "▀": (1, 0), "▄": (0, 1)}
 
-def load_matrix(svg_path):
-    data = open(svg_path, encoding="utf-8").read()
-    path = re.search(r'<path fill="black" d="([^"]+)"', data)
-    assert path, "no QR path found in SVG"
-    modules = set()
-    for m in re.finditer(r"M(\d+) (\d+)h1v1H(\d+)z", path.group(1)):
-        x, y, hx = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        assert x == hx, "unexpected path form"
-        modules.add((x, y))
-    assert modules, "empty QR path"
-    max_x = max(p[0] for p in modules)
-    max_y = max(p[1] for p in modules)
-    assert max_x == max_y, "non-square QR"
-    n = max_x - 3  # modules are offset by a 4-module border
-    matrix = [[False] * n for _ in range(n)]
-    for x, y in modules:
-        matrix[y - 4][x - 4] = True
-    return matrix
+
+def load_matrix(terminal_path):
+    text = open(terminal_path, encoding="utf-8").read()
+    grid = []
+    for line in text.splitlines():
+        stripped = ANSI.sub("", line)
+        if not stripped or not all(c in CHARS for c in stripped):
+            continue  # non-QR output lines (secret, URI, messages)
+        top, bot = [], []
+        for ch in stripped:
+            a, b = CHARS.get(ch, (None, None))
+            assert a is not None, f"unexpected QR char {ch!r}"
+            top.append(a)
+            bot.append(b)
+        grid.append(top)
+        grid.append(bot)
+    assert grid, "no QR rows"
+    width = len(grid[0])
+    assert all(len(r) == width for r in grid), "ragged QR rows"
+    n = width - 8  # 4-module border per side
+    assert n > 0 and len(grid) >= n + 8, "bad QR dimensions"  # odd heights get one pad row
+    return [[bool(grid[y + 4][x + 4]) for x in range(n)] for y in range(n)]
 
 
 def render(matrix, scale, blur, border=4):
@@ -66,8 +74,8 @@ def main():
     if sys.argv[1] == "--totp":
         print(pyotp.TOTP(sys.argv[2]).now())
         return
-    svg_path, secret = sys.argv[1], sys.argv[2]
-    matrix = load_matrix(svg_path)
+    qr_path, secret = sys.argv[1], sys.argv[2]
+    matrix = load_matrix(qr_path)
     expected = f"otpauth://totp/sudo2fa?secret={secret}&issuer=sudo2fa"
 
     detector = cv2.QRCodeDetector()
