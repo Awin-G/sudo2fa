@@ -31,8 +31,14 @@ pub fn verify(secret: &[u8], value: &str, parent: u32) -> Result<(), String> {
     if p.len() != 36 {
         return Err("invalid token length".into());
     }
+    // Compare the full MAC with constant-time accumulation rather than a
+    // short-circuiting partial match.
     let mac = crypto::hmac_sha1(secret, &p[..16]);
-    if mac[..16] != p[16..32] {
+    let mut diff = 0u8;
+    for i in 0..20 {
+        diff |= mac[i] ^ p[16 + i];
+    }
+    if diff != 0 {
         return Err("invalid token signature".into());
     }
     let expiry = u64::from_be_bytes(p[..8].try_into().unwrap());
