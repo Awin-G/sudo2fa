@@ -42,7 +42,11 @@ fn load() -> Result<Vec<u8>, String> {
     if meta.permissions().mode() & 0o777 != 0o600 || meta.uid() != 0 {
         return Err("refusing: /etc/shadow2fa must be root-owned mode 0600".into());
     }
-    let me = uid().to_string();
+    // sudo preserves the invoking account in SUDO_USER; its key is used even
+    // though this process is running with effective UID 0.
+    let me = env::var("SUDO_USER")
+        .map(|name| named_uid(&name).to_string())
+        .unwrap_or_else(|_| uid().to_string());
     for line in fs::read_to_string(p).map_err(|e| e.to_string())?.lines() {
         let mut x = line.splitn(2, ':');
         if x.next() == Some(&me) {
