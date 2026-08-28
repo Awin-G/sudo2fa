@@ -18,19 +18,13 @@ pub fn verify(secret: &[u8], supplied: &str) -> bool {
     (0..=2).any(|n| code(secret, now.saturating_sub(n * 30)) == value)
         || code(secret, now + 30) == value
 }
-pub fn new_secret() -> [u8; 20] {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    let mut seed = now.as_nanos() as u64 ^ std::process::id() as u64;
+pub fn new_secret() -> Result<[u8; 20], String> {
+    use std::io::Read;
     let mut out = [0u8; 20];
-    for byte in &mut out {
-        seed ^= seed << 13;
-        seed ^= seed >> 7;
-        seed ^= seed << 17;
-        *byte = (seed >> 24) as u8;
-    }
-    out
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| f.read_exact(&mut out))
+        .map_err(|e| format!("cannot read /dev/urandom: {}", e))?;
+    Ok(out)
 }
 pub fn secret_text(secret: &[u8]) -> String {
     base32::encode(secret)

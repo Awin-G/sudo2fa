@@ -13,7 +13,7 @@
 | main.rs | ✅ | CLI 全模式、密钥文件权限模型、setuid 真实 UID |
 
 ### Docker 全流程验证（scripts/docker_verify.sh，archlinux 容器，拷贝宿主二进制）
-当前 **17 PASS / 1 FAIL**（stage 2 聚合）：
+当前 **24 PASS / 0 FAIL**（全部通过）：
 
 通过的：
 - setup 生成密钥 + SVG；密钥文件 0600 root-owned；root 记录正确
@@ -50,7 +50,8 @@ c7a7eeb Add built-in QR code generator
 
 ## 待办
 
-- [ ] **卡住：token 异父拒绝在某上下文失效**（见 HANDOVER.md）
-- [ ] 密钥生成改用 /dev/urandom
-- [ ] stage 2 通过后全套验证 24/24
-- [ ] README 更新（-- 用法、token 绑定语义）
+- [x] ~~卡住：token 异父拒绝在某上下文失效~~ → **测试脚本缺陷，产品无 bug**
+  （`sh -c "cmd; :"` 中 `:` 吞掉退出码；根因见 HANDOVER.md）
+- [x] 密钥生成改用 /dev/urandom（totp::new_secret 返回 Result）
+- [x] stage 2 通过后全套验证 24/24
+- [x] README 更新（-- 用法、token 绑定语义）

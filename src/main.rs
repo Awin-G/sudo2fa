@@ -62,7 +62,7 @@ fn setup() -> Result<(), String> {
     if uid() != 0 {
         return Err("setup must be run as root".into());
     }
-    let secret = totp::new_secret();
+    let secret = totp::new_secret()?;
     let p = path();
     if let Some(parent) = std::path::Path::new(&p).parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?

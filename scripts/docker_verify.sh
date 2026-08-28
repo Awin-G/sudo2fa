@@ -60,9 +60,11 @@ no() { echo "FAIL: $1"; fail=$((fail+1)); }
 
 T=$(sudo2fa "$CODE" -t 25) && ok "token issued" || no "token issue"
 [ "$(sudo2fa "$T" -- id -u)" = "0" ] && ok "token authorizes in same session" || no "token same-session"
-# NB: the trailing ": " stops sh -c from exec-optimizing the command away,
-# so sudo2fa really is a child of a DIFFERENT process than the issuer.
-if sh -c "sudo2fa $T -- id -u; :" >/dev/null 2>&1; then no "foreign parent token refused"; else ok "foreign parent token refused"; fi
+# NB: `timeout` forks sudo2fa, so the verifier's parent really is a DIFFERENT
+# process than the issuer, and timeout propagates the exit status. A bare
+# `sh -c "cmd"` is exec'd (sudo2fa inherits this shell's parent -> false pass),
+# and `sh -c "cmd; :"` masks sudo2fa's exit status behind ':' -> false pass.
+if timeout 5 sudo2fa "$T" -- id -u >/dev/null 2>&1; then no "foreign parent token refused"; else ok "foreign parent token refused"; fi
 
 T2=$(sudo2fa "$CODE" -t 25 -c) && ok "cross-process token issued" || no "cross token issue"
 [ "$(sh -c "sudo2fa $T2 -- id -u")" = "0" ] && ok "cross-process token works from child shell" || no "cross token failed"

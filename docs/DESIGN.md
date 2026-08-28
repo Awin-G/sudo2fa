@@ -35,8 +35,8 @@ scripts/
 
 - **TOTP**：HMAC-SHA1(secret, counter_be_8bytes)，动态截断后 mod 10^6。
   验证窗口：当前、前 2 个、后 1 个时间片（now, now-30, now-60, now+30）。
-- **密钥生成**：`totp::new_secret()` 用纳秒时间与 pid 混合 xorshift 产生
-  20 字节。注意：这不是密码学安全随机数（见 §9 限制）。
+- **密钥生成**：`totp::new_secret()` 从 /dev/urandom 读取 20 字节，
+  读取失败则 setup 直接报错（无弱熵回退）。
 - **Token**（36 字节 = 72 hex 字符）：
   ```
   [0..8]   expiry   u64 BE（签发时间 + 有效秒数）
@@ -52,6 +52,9 @@ scripts/
 - 校验：读取校验进程自身的 ppid（`/proc/self/stat` 第 4 字段），
   与 token 内 parent 比对；parent==0 时跳过。
 - 效果：同一 shell 会话内可复用；跨 shell/脚本（父进程不同）被拒。
+- 注意：`sh -c "单命令"` 会被 shell exec 优化（sh 进程被被测程序替换），
+  此时校验进程继承 sh 的父进程，绑定判定为"同会话"属预期行为。
+  需要确定性异父场景时用会真实 fork 的包装器（如 `timeout`）。
 
 ## 5. QR 编码器（qr.rs）
 
@@ -105,8 +108,6 @@ TOTP 用 pyotp 独立生成，与二进制交叉验证。
 
 ## 9. 已知限制
 
-- 密钥生成的熵源弱（时间+pid），应替换为 /dev/urandom（纯 std 可用
-  `File::open("/dev/urandom").read_exact()`）
 - SHA-1 仅用于 TOTP 兼容（RFC 6238 要求），不作通用哈希
 - token 为 URL 安全 hex，但泄露即等于验证码（限时长内）
 - `-u` 依赖 `su`，PAM 配置异常的容器中行为可能不同
