@@ -60,6 +60,27 @@ fn shell_join(args: &[String]) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+// Write via a same-directory temp file and rename, so a crash mid-write can
+// never leave a truncated records file.
+fn write_atomic(p: &str, data: &str) -> Result<(), String> {
+    use std::io::Write;
+    let tmp = format!("{}.sudo2fa-tmp", p);
+    let r = (|| {
+        fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&tmp)
+            .and_then(|mut f| f.write_all(data.as_bytes()))
+            .map_err(|e| e.to_string())?;
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+        fs::rename(&tmp, p).map_err(|e| e.to_string())
+    })();
+    if r.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    r
+}
 fn load() -> Result<Vec<u8>, String> {
     let p = path();
     let meta = fs::metadata(&p).map_err(|_| format!("cannot read {}", p))?;
@@ -100,8 +121,7 @@ fn setup() -> Result<(), String> {
         .map(str::to_owned)
         .collect::<Vec<_>>();
     records.push(format!("{}:{}", target, base32::encode(&secret)));
-    fs::write(&p, records.join("\n") + "\n").map_err(|e| e.to_string())?;
-    fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+    write_atomic(&p, &(records.join("\n") + "\n"))?;
     let uri = format!(
         "otpauth://totp/sudo2fa?secret={}&issuer=sudo2fa",
         base32::encode(&secret)
