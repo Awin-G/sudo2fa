@@ -52,6 +52,14 @@ fn parent_pid() -> u32 {
         })
         .unwrap_or(0)
 }
+// su -c takes one string; quote each argument so the shell re-parses it
+// into exactly the original argv, without re-interpreting expansions.
+fn shell_join(args: &[String]) -> String {
+    args.iter()
+        .map(|a| format!("'{}'", a.replace('\'', "'\\''")))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 fn load() -> Result<Vec<u8>, String> {
     let p = path();
     let meta = fs::metadata(&p).map_err(|_| format!("cannot read {}", p))?;
@@ -172,8 +180,20 @@ fn run() -> Result<(), String> {
     c.args(&command[1..]);
     if let Some(u) = user {
         c = Command::new(which(SU));
-        c.args(["-s", "/bin/sh", "-c", &command.join(" "), &u]);
+        c.args(["-s", "/bin/sh", "-c", &shell_join(&command), &u]);
     }
     let status = c.status().map_err(|e| e.to_string())?;
     exit(status.code().unwrap_or(1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn shell_join_is_injection_safe() {
+        let argv = vec!["sh".to_string(), "-c".to_string(), "id -u; $(evil)".to_string()];
+        assert_eq!(shell_join(&argv), "'sh' '-c' 'id -u; $(evil)'");
+        let tricky = vec!["a'b".to_string(), "x y".to_string()];
+        assert_eq!(shell_join(&tricky), "'a'\\''b' 'x y'");
+    }
 }
