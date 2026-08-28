@@ -115,8 +115,14 @@ fn run() -> Result<(), String> {
     let mut user = None;
     let mut seconds = 120u64;
     let mut command = Vec::new();
+    let mut flags_done = false;
     while let Some(x) = a.next() {
+        if flags_done {
+            command.push(x.into());
+            continue;
+        }
         match x.as_str() {
+            "--" => flags_done = true,
             "-t" | "--token" => token_mode = true,
             "-i" => login = true,
             "-c" | "--cross-process" => cross = true,

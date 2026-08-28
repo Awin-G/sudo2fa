@@ -100,12 +100,32 @@ pub fn encode(text: &str) -> Result<Vec<Vec<bool>>, String> {
     if bytes.len() > 106 {
         return Err("otpauth URI is too long for QR Version 5-L".into());
     }
-    let mut data = Vec::with_capacity(108);
-    data.push(0x40); // byte mode, followed by the 8-bit length field
-    data.push(bytes.len() as u8);
-    data.extend_from_slice(bytes);
+    // Bit-level stream: 4-bit byte-mode indicator, 8-bit count, payload,
+    // terminator (up to 4 bits), byte alignment, alternating pad codewords.
+    let mut bits: Vec<bool> = vec![false, true, false, false];
+    for i in (0..8).rev() {
+        bits.push((bytes.len() >> i) & 1 == 1);
+    }
+    for &b in bytes {
+        for i in (0..8).rev() {
+            bits.push((b >> i) & 1 == 1);
+        }
+    }
+    let cap = 108 * 8;
+    for _ in 0..4.min(cap - bits.len()) {
+        bits.push(false);
+    }
+    while bits.len() % 8 != 0 {
+        bits.push(false);
+    }
+    let mut data: Vec<u8> = bits
+        .chunks(8)
+        .map(|c| c.iter().fold(0u8, |acc, &b| (acc << 1) | b as u8))
+        .collect();
+    let mut pad = 0xecu8;
     while data.len() < 108 {
-        data.push(if data.len() % 2 == 0 { 0xec } else { 0x11 });
+        data.push(pad);
+        pad = if pad == 0xec { 0x11 } else { 0xec };
     }
     let ec = ec_codewords(&data);
     data.extend_from_slice(&ec);
@@ -157,19 +177,21 @@ pub fn encode(text: &str) -> Result<Vec<Vec<bool>>, String> {
         x -= 2;
     }
     let format = format_bits();
+    // First copy (ISO placement, Nayuki coordinate convention resolved to
+    // [row][col]): bits 0-5 run down column 8, bits 9-14 run along row 8.
     let mut p = 0;
     for i in 0..=5 {
-        m[8][i] = ((format >> p) & 1) != 0;
+        m[i][8] = ((format >> p) & 1) != 0;
         p += 1;
     }
-    m[8][7] = ((format >> p) & 1) != 0;
+    m[7][8] = ((format >> p) & 1) != 0;
     p += 1;
     m[8][8] = ((format >> p) & 1) != 0;
     p += 1;
-    m[7][8] = ((format >> p) & 1) != 0;
+    m[8][7] = ((format >> p) & 1) != 0;
     p += 1;
     for i in (0..=5).rev() {
-        m[i][8] = ((format >> p) & 1) != 0;
+        m[8][i] = ((format >> p) & 1) != 0;
         p += 1;
     }
     p = 0;
