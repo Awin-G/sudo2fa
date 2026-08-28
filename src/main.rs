@@ -32,14 +32,16 @@ fn uid() -> u32 {
         })
         .unwrap_or(65534)
 }
-fn named_uid(name: &str) -> u32 {
-    Command::new(which(ID))
+// Fail closed: an unresolvable name must never fall back to root's key.
+fn named_uid(name: &str) -> Result<u32, String> {
+    let out = Command::new(which(ID))
         .args(["-u", name])
         .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0)
+        .map_err(|e| format!("cannot run id: {}", e))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.trim()
+        .parse()
+        .map_err(|_| format!("cannot resolve user {}", name))
 }
 fn parent_pid() -> u32 {
     fs::read_to_string("/proc/self/stat")
@@ -58,9 +60,10 @@ fn load() -> Result<Vec<u8>, String> {
     }
     // sudo preserves the invoking account in SUDO_USER; its key is used even
     // though this process is running with effective UID 0.
-    let me = env::var("SUDO_USER")
-        .map(|name| named_uid(&name).to_string())
-        .unwrap_or_else(|_| uid().to_string());
+    let me = match env::var("SUDO_USER") {
+        Ok(name) => named_uid(&name)?.to_string(),
+        Err(_) => uid().to_string(),
+    };
     for line in fs::read_to_string(p).map_err(|e| e.to_string())?.lines() {
         let mut x = line.splitn(2, ':');
         if x.next() == Some(&me) {
@@ -78,10 +81,10 @@ fn setup() -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(&p).parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?
     }
-    let target = env::var("SUDO_USER")
-        .ok()
-        .map(|s| named_uid(&s))
-        .unwrap_or(0);
+    let target = match env::var("SUDO_USER") {
+        Ok(name) => named_uid(&name)?,
+        Err(_) => 0,
+    };
     let mut records = fs::read_to_string(&p)
         .unwrap_or_default()
         .lines()
