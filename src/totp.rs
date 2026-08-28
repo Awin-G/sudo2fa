@@ -1,4 +1,4 @@
-use crate::{base32, crypto};
+use crate::crypto;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn code(secret: &[u8], timestamp: u64) -> u32 {
@@ -25,9 +25,6 @@ pub fn new_secret() -> Result<[u8; 20], String> {
         .and_then(|mut f| f.read_exact(&mut out))
         .map_err(|e| format!("cannot read /dev/urandom: {}", e))?;
     Ok(out)
-}
-pub fn secret_text(secret: &[u8]) -> String {
-    base32::encode(secret)
 }
 
 #[cfg(test)]
