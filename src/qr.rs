@@ -40,50 +40,48 @@ fn ec_codewords(data: &[u8]) -> Vec<u8> {
     }
     rem
 }
-fn bch(v: u16, poly: u16) -> u16 {
-    let top = poly as u32;
-    let mut x = v as u32;
-    while (32 - x.leading_zeros()) >= (32 - top.leading_zeros()) {
-        x ^= top << ((32 - x.leading_zeros()) - (32 - top.leading_zeros()));
+fn format_bits() -> u16 {
+    // EC level L (01), mask 0; BCH(15,5) remainder over 0x537, then XOR 0x5412.
+    let data = 1u32 << 3;
+    let mut v = data << 10;
+    for i in (10..=14).rev() {
+        if (v >> i) & 1 == 1 {
+            v ^= 0x537u32 << (i - 10);
+        }
     }
-    x as u16
+    (((data << 10) | (v & 0x3ff)) as u16) ^ 0x5412
 }
 fn reserved(size: usize) -> Vec<Vec<bool>> {
     let mut r = vec![vec![false; size]; size];
-    let mark_finder = |r: &mut Vec<Vec<bool>>, x: usize, y: usize| {
-        for dy in 0..=8 {
-            for dx in 0..=8 {
-                if x + dx < size && y + dy < size {
-                    r[y + dy][x + dx] = true;
-                }
+    let block = |r: &mut Vec<Vec<bool>>, y0: usize, x0: usize| {
+        for dy in 0..8 {
+            for dx in 0..8 {
+                r[y0 + dy][x0 + dx] = true;
             }
         }
     };
-    mark_finder(&mut r, 0, 0);
-    mark_finder(&mut r, size - 7, 0);
-    mark_finder(&mut r, 0, size - 7);
+    block(&mut r, 0, 0);
+    block(&mut r, 0, size - 8);
+    block(&mut r, size - 8, 0);
     for i in 0..size {
         r[6][i] = true;
         r[i][6] = true;
     }
-    for y in [6usize, 30] {
-        for x in [6usize, 30] {
-            if !(x == 6 && y == 6) && x < size && y < size {
-                for dy in 0..=4 {
-                    for dx in 0..=4 {
-                        r[y - 2 + dy][x - 2 + dx] = true;
-                    }
-                }
-            }
+    // Version 5 has a single alignment pattern centered at (30, 30); the
+    // other center combinations would overlap finders and are omitted.
+    for dy in 0..5 {
+        for dx in 0..5 {
+            r[28 + dy][28 + dx] = true;
         }
     }
-    for i in 0..9 {
+    for i in 0..=8 {
         r[8][i] = true;
         r[i][8] = true;
+    }
+    for i in 0..8 {
         r[8][size - 1 - i] = true;
         r[size - 1 - i][8] = true;
     }
-    r[size - 8][8] = true;
     r
 }
 fn finder(m: &mut [Vec<bool>], x: usize, y: usize) {
@@ -158,7 +156,7 @@ pub fn encode(text: &str) -> Result<Vec<Vec<bool>>, String> {
         upward = !upward;
         x -= 2;
     }
-    let format = ((1u16 << 3) | bch(1u16 << 3, 0x537)) ^ 0x5412; // level L, mask 0
+    let format = format_bits();
     let mut p = 0;
     for i in 0..=5 {
         m[8][i] = ((format >> p) & 1) != 0;
@@ -175,14 +173,15 @@ pub fn encode(text: &str) -> Result<Vec<Vec<bool>>, String> {
         p += 1;
     }
     p = 0;
-    for i in (size - 1 - 7..size).rev() {
+    for i in (size - 8..size).rev() {
         m[8][i] = ((format >> p) & 1) != 0;
         p += 1;
     }
-    for i in size - 8..size {
+    for i in size - 7..size {
         m[i][8] = ((format >> p) & 1) != 0;
         p += 1;
     }
+    m[size - 8][8] = true; // dark module, never part of format data
     Ok(m)
 }
 pub fn svg(text: &str) -> Result<String, String> {

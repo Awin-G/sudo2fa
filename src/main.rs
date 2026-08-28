@@ -10,12 +10,15 @@ fn path() -> String {
     env::var("SUDO2FA_FILE").unwrap_or_else(|_| FILE.into())
 }
 fn uid() -> u32 {
-    Command::new("id")
-        .arg("-u")
-        .output()
+    // Real UID from /proc (setuid binaries keep the invoking account here,
+    // while `id -u` would report the effective UID).
+    fs::read_to_string("/proc/self/status")
         .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .and_then(|s| s.trim().parse().ok())
+        .and_then(|s| {
+            s.lines()
+                .find(|l| l.starts_with("Uid:"))
+                .and_then(|l| l.split_whitespace().nth(1).and_then(|v| v.parse().ok()))
+        })
         .unwrap_or(65534)
 }
 fn named_uid(name: &str) -> u32 {
@@ -134,7 +137,9 @@ fn run() -> Result<(), String> {
         }
         println!(
             "{}",
-            token::issue(&secret, seconds, if cross { 0 } else { std::process::id() })
+            // Bind to the issuing process's parent (typically the shell) so
+            // reuse stays inside that session; 0 disables the binding.
+            token::issue(&secret, seconds, if cross { 0 } else { parent_pid() })
         );
         return Ok(());
     }
