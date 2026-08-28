@@ -6,6 +6,17 @@ use std::{
 use sudo2fa::{base32, qr, token, totp};
 
 const FILE: &str = "/etc/shadow2fa";
+// External helpers must never be resolved through PATH: as a setuid binary,
+// an attacker-controlled PATH entry would be executed with elevated rights.
+const ID: &[&str] = &["/usr/bin/id", "/bin/id"];
+const SU: &[&str] = &["/bin/su", "/usr/bin/su"];
+fn which(candidates: &[&str]) -> String {
+    candidates
+        .iter()
+        .find(|p| std::path::Path::new(p).exists())
+        .unwrap_or(&candidates[0])
+        .to_string()
+}
 fn path() -> String {
     env::var("SUDO2FA_FILE").unwrap_or_else(|_| FILE.into())
 }
@@ -22,7 +33,7 @@ fn uid() -> u32 {
         .unwrap_or(65534)
 }
 fn named_uid(name: &str) -> u32 {
-    Command::new("id")
+    Command::new(which(ID))
         .args(["-u", name])
         .output()
         .ok()
@@ -157,7 +168,7 @@ fn run() -> Result<(), String> {
     let mut c = Command::new(&command[0]);
     c.args(&command[1..]);
     if let Some(u) = user {
-        c = Command::new("su");
+        c = Command::new(which(SU));
         c.args(["-s", "/bin/sh", "-c", &command.join(" "), &u]);
     }
     let status = c.status().map_err(|e| e.to_string())?;
