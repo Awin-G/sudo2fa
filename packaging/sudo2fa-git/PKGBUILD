@@ -1,0 +1,34 @@
+# Maintainer: Awin-G <sudo2fa@localhost>
+# Contributor: Awin-G
+
+pkgname=sudo2fa-git
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Dependency-free, setuid-aware TOTP authorization helper for headless Linux (AI agents, remote shells, systemd services)"
+arch=('x86_64')
+url="https://github.com/Awin-G/sudo2fa"
+license=('MIT')
+depends=()
+makedepends=('cargo' 'git')
+provides=('sudo2fa')
+conflicts=('sudo2fa')
+source=("sudo2fa::git+https://github.com/Awin-G/sudo2fa.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$srcdir/sudo2fa"
+    git describe --always --long 2>/dev/null | \
+        sed 's/^v//; s/\([^-]*-g\)/r\1/; s/-/./g' || \
+        echo "0.1.0"
+}
+
+build() {
+    cd "$srcdir/sudo2fa"
+    cargo build --release --locked
+}
+
+package() {
+    cd "$srcdir/sudo2fa"
+    install -Dm4755 -o root -g root target/release/sudo2fa \
+        "$pkgdir/usr/bin/sudo2fa"
+}
