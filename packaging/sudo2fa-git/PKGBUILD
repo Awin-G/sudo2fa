@@ -1,5 +1,5 @@
-# Maintainer: Awin-G <sudo2fa@localhost>
-# Contributor: Awin-G
+# Maintainer: awinx <xuebao at mail dot awin-x dot top>
+# Contributor: awinx
 
 pkgname=sudo2fa-git
 pkgver=0.1.0
@@ -17,9 +17,12 @@ sha256sums=('SKIP')
 
 pkgver() {
     cd "$srcdir/sudo2fa"
-    git describe --always --long 2>/dev/null | \
-        sed 's/^v//; s/\([^-]*-g\)/r\1/; s/-/./g' || \
-        echo "0.1.0"
+    # VCS guideline: prefer the most recent annotated tag; fall back to a
+    # monotonic revision count + short hash when no tag exists yet.
+    ( set -o pipefail
+      git describe --long --abbrev=7 2>/dev/null | sed 's/\([^-]*-g\)/r\1/;s/-/./g' ||
+      printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+    )
 }
 
 build() {
