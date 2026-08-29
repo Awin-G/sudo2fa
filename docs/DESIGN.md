@@ -99,6 +99,9 @@ sudo2fa setup [-q|--qrcode]
 
 `--` 之后的所有参数视为指令的一部分（避免与选项混淆）。
 `-u` 通过 `su -s /bin/sh -c "<cmd>" <user>` 切换用户（需 root）。
+注意：`su` 按**真实 UID** 认证，setuid 二进制下真实 UID 是调用者（非 root），
+因此 `-u` 分支在 exec 前用 `CommandExt::uid(0)`（setuid syscall）把子进程的
+真实/有效/保存 UID 全部提升为 0，`su` 见到真实 root 即免密切换。
 
 ## 8. 验证策略（不得点阵断言）
 
@@ -112,5 +115,6 @@ TOTP 用 pyotp 独立生成，与二进制交叉验证。
 
 - SHA-1 仅用于 TOTP 兼容（RFC 6238 要求），不作通用哈希
 - token 为 URL 安全 hex，但泄露即等于验证码（限时长内）
-- `-u` 依赖 `su`，PAM 配置异常的容器中行为可能不同
+- `-u` 依赖 `su`，PAM 配置严格的系统上依赖 `-u` 分支对子进程的
+  `setuid(0)` 提权（见 §7），已实测通过；个别 PAM 配置仍可能行为不同
 - QR 仅支持 Version 5-L，URI 超 106 字节会拒绝；输出只到终端，不落盘

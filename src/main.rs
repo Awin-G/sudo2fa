@@ -199,8 +199,15 @@ fn run() -> Result<(), String> {
     let mut c = Command::new(&command[0]);
     c.args(&command[1..]);
     if let Some(u) = user {
+        // su authenticates against the REAL uid. As a setuid binary the real
+        // uid is the invoker (non-root), so su would demand a password even
+        // though we are effectively root. setuid(0) in the child raises the
+        // real uid first (we are setuid root, so this is allowed), letting su
+        // switch users without prompting.
         c = Command::new(which(SU));
         c.args(["-s", "/bin/sh", "-c", &shell_join(&command), &u]);
+        use std::os::unix::process::CommandExt;
+        c.uid(0);
     }
     let status = c.status().map_err(|e| e.to_string())?;
     exit(status.code().unwrap_or(1))
