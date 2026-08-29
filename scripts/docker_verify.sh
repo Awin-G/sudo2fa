@@ -24,7 +24,7 @@ expect_ok() {
     if out=$("$@" 2>&1); then ok "$desc (-> $out)"; else no "$desc ($out)"; fi
 }
 
-cleanup() { docker rm -f "$CT" >/dev/null 2>&1; rm -f .s2fa_qr_terminal; }
+cleanup() { docker rm -f "$CT" >/dev/null 2>&1; }
 trap cleanup EXIT
 cleanup
 
@@ -39,6 +39,8 @@ out=$(run "$BIN" setup --qrcode) || { no "setup"; exit 1; }
 SECRET=$(printf '%s\n' "$out" | sed -n 's/^TOTP secret: //p')
 [ -n "$SECRET" ] || { no "setup printed no secret"; exit 1; }
 ok "setup generated secret (QR rendered in terminal, no file stored)"
+# Keep the setup output (terminal-rendered QR included) so it can be `cat`ed
+# in different terminals to compare display. verify_qr.py reads it below.
 printf '%s\n' "$out" > .s2fa_qr_terminal
 
 mode_owner=$(run stat -c '%a %u' /etc/shadow2fa)
@@ -108,6 +110,10 @@ expect_fail "no setuid: non-root cannot read key file" \
 
 echo "== key file records =="
 run cat /etc/shadow2fa | sed 's/:.*/:<redacted>/'
+
+echo
+echo "== replayed setup output (terminal QR, also kept in .s2fa_qr_terminal) =="
+cat .s2fa_qr_terminal
 
 echo
 echo "RESULT: pass=$pass fail=$fail"
