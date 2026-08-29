@@ -1,0 +1,15 @@
+pkgbase = sudo2fa-git
+	pkgdesc = Dependency-free, setuid-aware TOTP authorization helper for headless Linux (AI agents, remote shells, systemd services)
+	pkgver = b610013
+	pkgrel = 1
+	url = https://github.com/Awin-G/sudo2fa
+	arch = x86_64
+	license = MIT
+	makedepends = cargo
+	makedepends = git
+	provides = sudo2fa
+	conflicts = sudo2fa
+	source = sudo2fa::git+https://github.com/Awin-G/sudo2fa.git
+	sha256sums = SKIP
+
+pkgname = sudo2fa-git
