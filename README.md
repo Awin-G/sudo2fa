@@ -86,8 +86,8 @@ several privileged commands over a short task.
 
 - The whole pipeline is TOTP, so the 30-second code window bounds one-shot
   authorizations; long-running agent tasks should mint a token.
-- Token binding is best-effort under shell `exec` optimization
-  (see `docs/DESIGN.md` §4); use `timeout`/`setsid` wrappers when testing it.
+- Token binding is best-effort under shell `exec` optimization; use
+  `timeout`/`setsid` wrappers when testing it.
 - QR output targets Version 5-L (106-byte payload); it renders to the
   terminal, not to a file.
 
@@ -99,5 +99,4 @@ bash scripts/docker_verify.sh   # full end-to-end suite in an archlinux containe
 ```
 
 The suite decodes the rendered QR with a real decoder (OpenCV) and
-cross-checks TOTP codes against `pyotp`. See `docs/DESIGN.md` for the full
-design.
+cross-checks TOTP codes against `pyotp`.

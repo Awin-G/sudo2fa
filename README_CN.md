@@ -83,8 +83,8 @@ sudo2fa <code> -- ls -l /root
 
 - 整条链路基于 TOTP，单次授权受 30 秒验证码窗口限制；长时间运行的
   Agent 任务应改用 token。
-- token 绑定在 Shell 的 `exec` 优化下是尽力而为（见 `docs/DESIGN.md`
-  §4）；测试时请使用 `timeout`/`setsid` 这类真正 fork 的包装器。
+- token 绑定在 Shell 的 `exec` 优化下是尽力而为；测试时请使用
+  `timeout`/`setsid` 这类真正 fork 的包装器。
 - 二维码输出面向 Version 5-L（106 字节负载）；只渲染到终端，不写文件。
 
 ## 开发
@@ -95,4 +95,4 @@ bash scripts/docker_verify.sh   # archlinux 容器内的全流程验证
 ```
 
 验证套件用真实解码器（OpenCV）解码渲染出的二维码，并用 `pyotp` 独立
-交叉校验 TOTP 验证码。完整设计见 `docs/DESIGN.md`。
+交叉校验 TOTP 验证码。
