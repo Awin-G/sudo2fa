@@ -5,7 +5,7 @@
 set -u
 cd "$(dirname "$0")/.."
 
-PY=${PY:-/home/awinx/dev/venv/bin/python}
+PY=${PY:-/home/awinx/dev/.venv/bin/python}
 BIN=/usr/local/bin/sudo2fa
 CT=sudo2fa-test
 pass=0
