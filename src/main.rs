@@ -135,6 +135,31 @@ fn setup() -> Result<(), String> {
     }
     Ok(())
 }
+const USAGE: &str = "\
+sudo2fa - TOTP authorization helper: execute commands as root with a
+time-based one-time code instead of a password.
+
+Usage:
+  sudo2fa <code|token> [--] command [args...]      run command as root
+  sudo2fa <code|token> [-t|--token] [seconds]      mint a token (default 120, 20-1800)
+  sudo2fa <code|token> -t -c|--cross-process [s]   token reusable across processes
+  sudo2fa <code|token> [-u|--user] <name> [--] cmd run command as user <name>
+  sudo2fa <code|token> -i                          start a login shell
+  sudo2fa setup [-q|--qrcode]                      (re)init your TOTP key
+
+Options:
+  -t, --token           mint a short-lived token instead of running a command
+  -c, --cross-process   do not bind the token to the issuing session
+  -u, --user <name>     run the command as user <name> (via su)
+  -i                    start a login shell ($SHELL)
+  -q, --qrcode          (setup) render the otpauth QR in the terminal
+  -h, --help            show this help and exit
+  --                    treat everything after it as the command
+
+Records live in /etc/shadow2fa (root:root, 0600), one UID:BASE32_SECRET per
+line. TOTP follows RFC 6238 (30s window); tokens are HMAC-SHA1 signed and
+expire automatically. See https://github.com/Awin-G/sudo2fa.";
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("sudo2fa: {}", e);
@@ -143,11 +168,23 @@ fn main() {
 }
 fn run() -> Result<(), String> {
     let mut a = env::args().skip(1);
-    let first = a
-        .next()
-        .ok_or("usage: sudo2fa <code|token> [options] command...")?;
+    let first = a.next().ok_or_else(|| USAGE.to_string())?;
     if first == "setup" {
         return setup();
+    }
+    // Help wins over everything else, including key-file checks: any -h or
+    // --help before `--` prints usage and exits successfully.
+    let mut rest = env::args().skip(1).peekable();
+    loop {
+        match rest.peek() {
+            None => break,
+            Some(x) if x == "--" => break,
+            Some(x) if x == "-h" || x == "--help" => {
+                println!("{USAGE}");
+                exit(0)
+            }
+            Some(_) => _ = rest.next(),
+        }
     }
     let secret = load()?;
     let mut token_mode = false;
@@ -199,16 +236,18 @@ fn run() -> Result<(), String> {
     let mut c = Command::new(&command[0]);
     c.args(&command[1..]);
     if let Some(u) = user {
-        // su authenticates against the REAL uid. As a setuid binary the real
-        // uid is the invoker (non-root), so su would demand a password even
-        // though we are effectively root. setuid(0) in the child raises the
-        // real uid first (we are setuid root, so this is allowed), letting su
-        // switch users without prompting.
         c = Command::new(which(SU));
         c.args(["-s", "/bin/sh", "-c", &shell_join(&command), &u]);
-        use std::os::unix::process::CommandExt;
-        c.uid(0);
     }
+    // A setuid binary keeps the invoker's REAL uid (only the effective uid is
+    // root). Without raising the real uid, child processes still run with the
+    // caller's uid for permission checks (setuid(2)), so commands like su,
+    // writes to root-only paths, or process checks would misbehave. setuid(0)
+    // in the child raises real+effective+saved together. su(1) additionally
+    // authenticates against the real uid, so this also lets -u switch users
+    // without prompting.
+    use std::os::unix::process::CommandExt;
+    c.uid(0).gid(0);
     let status = c.status().map_err(|e| e.to_string())?;
     exit(status.code().unwrap_or(1))
 }
