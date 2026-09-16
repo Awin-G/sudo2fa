@@ -3,7 +3,7 @@ use std::{
     os::unix::fs::{MetadataExt, PermissionsExt},
     process::{Command, exit},
 };
-use sudo2fa::{base32, qr, token, totp};
+use sudo2fa::{base32, qr, throttle, token, totp};
 
 const FILE: &str = "/etc/shadow2fa";
 // External helpers must never be resolved through PATH: as a setuid binary,
@@ -19,6 +19,11 @@ fn which(candidates: &[&str]) -> String {
 }
 fn path() -> String {
     env::var("SUDO2FA_FILE").unwrap_or_else(|_| FILE.into())
+}
+// Failed-attempt timestamps live next to the key file, so a SUDO2FA_FILE
+// override keeps a test's throttle state isolated too.
+fn throttle_path() -> String {
+    format!("{}.retry", path())
 }
 fn uid() -> u32 {
     // Real UID from /proc (setuid binaries keep the invoking account here,
@@ -158,7 +163,8 @@ Options:
 
 Records live in /etc/shadow2fa (root:root, 0600), one UID:BASE32_SECRET per
 line. TOTP follows RFC 6238 (30s window); tokens are HMAC-SHA1 signed and
-expire automatically. See https://github.com/Awin-G/sudo2fa.";
+expire automatically. A failed code or token start a global 3-second window
+during which further attempts are refused. See https://github.com/Awin-G/sudo2fa.";
 
 fn main() {
     if let Err(e) = run() {
@@ -212,8 +218,13 @@ fn run() -> Result<(), String> {
             x => command.push(x.into()),
         }
     }
+    // TOTP codes and tokens share one global failed-attempt limit.
+    throttle::check(&throttle_path())?;
     if !totp::verify(&secret, &first) {
-        token::verify(&secret, &first, parent_pid())?
+        if let Err(e) = token::verify(&secret, &first, parent_pid()) {
+            throttle::record_failure(&throttle_path());
+            return Err(e);
+        }
     }
     if token_mode {
         if seconds < 20 || seconds > 1800 {

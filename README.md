@@ -78,8 +78,14 @@ several privileged commands over a short task.
   effective UID under setuid). `SUDO_USER` selects the key in sudo contexts.
 - External helpers are invoked by absolute path — never through `PATH` — to
   resist hijacking of a setuid process.
-- Tokens are 36 bytes: 8-byte expiry, 8-byte bound parent pid (0 = unbound),
-  and a 20-byte HMAC-SHA1 over the header, compared in constant time.
+- Tokens are 12 bytes — a 4-byte expiry and an 8-byte truncated HMAC-SHA1 —
+  rendered as 16 URL-safe base64 characters. The bound parent pid is signed
+  into the MAC (0 = unbound) rather than stored, and MACs are compared in
+  constant time.
+- Failed attempts are globally rate-limited: a failed code or token starts a
+  3-second window during which every further attempt is refused before any
+  verification. The timestamp lives in a root-owned `0600` state file next to
+  the key file (`/etc/shadow2fa.retry`).
 - TOTP follows RFC 6238 with a ±1 window (current, two past, one future).
 
 ## Limitations

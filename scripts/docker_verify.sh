@@ -16,11 +16,13 @@ no() { echo "FAIL: $1"; fail=$((fail + 1)); }
 expect_fail() { # desc, then command...
     local desc=$1
     shift
+    reset_throttle
     if "$@" >/dev/null 2>&1; then no "$desc"; else ok "$desc"; fi
 }
 expect_ok() {
     local desc=$1
     shift
+    reset_throttle
     if out=$("$@" 2>&1); then ok "$desc (-> $out)"; else no "$desc ($out)"; fi
 }
 
@@ -32,6 +34,8 @@ cargo build --release || exit 1
 
 docker run -d --name "$CT" -v "$PWD":/work -w /work archlinux:latest sleep infinity >/dev/null || exit 1
 run() { docker exec "$CT" "$@"; }
+# Failed-attempt state is global; clear it so each case starts from zero.
+reset_throttle() { run rm -f /etc/shadow2fa.retry; }
 
 echo "== stage 1: setup, key file, QR =="
 run install -m 4755 /work/target/release/sudo2fa "$BIN" || exit 1
@@ -61,21 +65,30 @@ pass=0; fail=0
 ok() { echo "PASS: $1"; pass=$((pass+1)); }
 no() { echo "FAIL: $1"; fail=$((fail+1)); }
 
+RT=/etc/shadow2fa.retry
+rm -f "$RT"
 T=$(sudo2fa "$CODE" -t 25) && ok "token issued" || no "token issue"
+rm -f "$RT"
 [ "$(sudo2fa "$T" -- id -u)" = "0" ] && ok "token authorizes in same session" || no "token same-session"
 # NB: `timeout` forks sudo2fa, so the verifier's parent really is a DIFFERENT
 # process than the issuer, and timeout propagates the exit status. A bare
 # `sh -c "cmd"` is exec'd (sudo2fa inherits this shell's parent -> false pass),
 # and `sh -c "cmd; :"` masks sudo2fa's exit status behind ':' -> false pass.
+rm -f "$RT"
 if timeout 5 sudo2fa "$T" -- id -u >/dev/null 2>&1; then no "foreign parent token refused"; else ok "foreign parent token refused"; fi
 
+rm -f "$RT"
 T2=$(sudo2fa "$CODE" -t 25 -c) && ok "cross-process token issued" || no "cross token issue"
+rm -f "$RT"
 [ "$(sh -c "sudo2fa $T2 -- id -u")" = "0" ] && ok "cross-process token works from child shell" || no "cross token failed"
 
+rm -f "$RT"
 T3=$(sudo2fa "$CODE" -t 20)
 sleep 21
+rm -f "$RT"
 if sudo2fa "$T3" -- id -u >/dev/null 2>&1; then no "expired token refused"; else ok "expired token refused"; fi
 
+rm -f "$RT"
 c=${T2:0:1}; d=0; [ "$c" = "0" ] && d=1
 if sudo2fa "${d}${T2:1}" -- id -u >/dev/null 2>&1; then no "tampered token refused"; else ok "tampered token refused"; fi
 
@@ -88,6 +101,7 @@ echo "== stage 3: command, login, user switching =="
 expect_ok "authorized command executes as root" run "$BIN" "$CODE" -- id -u
 expect_fail "wrong code refused" run "$BIN" 000000 -- id -u
 expect_fail "garbage code refused" run "$BIN" zzzz -- id -u
+reset_throttle
 expect_ok "login shell (-i) runs" bash -c "echo 'id -u; exit' | docker exec -i $CT $BIN '$CODE' -i"
 run useradd -m tester
 expect_ok "-u runs command as tester" run "$BIN" "$CODE" -u tester -- id -u
@@ -107,6 +121,17 @@ expect_fail "setuid: nobody wrong code refused" \
 run install -m 755 /work/target/release/sudo2fa /tmp/s2fa-nosuid
 expect_fail "no setuid: non-root cannot read key file" \
     run setpriv --reuid=65534 --regid=65534 --clear-groups /tmp/s2fa-nosuid "$CODE2" -- id -u
+
+echo "== stage 5: global failed-attempt rate limit =="
+# A fresh code, so the lockout check below is not racing the TOTP window.
+CODE5=$("$PY" scripts/verify_qr.py --totp "$SECRET") || exit 1
+reset_throttle
+expect_fail "wrong code refused (arms the limiter)" run "$BIN" 000000 -- id -u
+# Same valid code immediately afterwards must be refused by the limiter.
+if run "$BIN" "$CODE5" -- id -u >/dev/null 2>&1; then no "rate limit blocks a valid code"; else ok "rate limit blocks a valid code"; fi
+# ...and accepted again once the 3-second window has passed.
+sleep 4
+if run "$BIN" "$CODE5" -- id -u >/dev/null 2>&1; then ok "valid code accepted after the window"; else no "valid code accepted after the window"; fi
 
 echo "== key file records =="
 run cat /etc/shadow2fa | sed 's/:.*/:<redacted>/'
